@@ -14,6 +14,12 @@ export default function FeedbackPage({ params }: { params: { id: string } }) {
   const [comentario, setComentario] = useState(existente?.comentario ?? "");
   const [enviado, setEnviado] = useState(Boolean(existente));
 
+  const [mostrarFormDevolucion, setMostrarFormDevolucion] = useState(false);
+  const [quienPagaFlete, setQuienPagaFlete] = useState<"cliente" | "shopper">("shopper");
+  const [plazoDias, setPlazoDias] = useState(10);
+  const [reembolsoParcial, setReembolsoParcial] = useState(false);
+  const [montoReembolso, setMontoReembolso] = useState(0);
+
   return (
     <ScreenShell proyectoId={params.id} activeSlug="feedback" titulo="Post-entrega — Feedback y devoluciones" actor="cliente">
       <div className="max-w-xl rounded-lg border border-neutral-200 bg-white p-6">
@@ -62,18 +68,114 @@ export default function FeedbackPage({ params }: { params: { id: string } }) {
           <p className="text-sm font-medium text-neutral-900">
             ¿Necesitás devolver algún ítem?
           </p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Definir quién paga el flete, el plazo y si aplica reembolso
-            parcial es un flujo de coordinación con el shopper — pendiente de
-            implementar por completo. Por ahora esto solo registra el pedido.
-          </p>
+
           {state.feedbacks[params.id]?.devolucion_solicitada ? (
-            <p className="mt-3 text-sm text-amber-700">
-              Devolución solicitada — el shopper la va a coordinar con vos.
-            </p>
+            <div className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+              <p className="font-medium">Devolución solicitada</p>
+              <ul className="mt-1 space-y-0.5 text-xs">
+                <li>
+                  Flete a cargo de:{" "}
+                  <strong>
+                    {state.feedbacks[params.id]?.devolucion?.quienPagaFlete === "cliente"
+                      ? "el cliente"
+                      : "el shopper"}
+                  </strong>
+                </li>
+                <li>
+                  Plazo: <strong>{state.feedbacks[params.id]?.devolucion?.plazoDias} días</strong>
+                </li>
+                {state.feedbacks[params.id]?.devolucion?.reembolsoParcial && (
+                  <li>
+                    Reembolso parcial:{" "}
+                    <strong>
+                      ${(state.feedbacks[params.id]?.devolucion?.montoReembolso ?? 0).toLocaleString("es-AR")}
+                    </strong>
+                  </li>
+                )}
+              </ul>
+            </div>
+          ) : mostrarFormDevolucion ? (
+            <div className="mt-3 space-y-3 rounded-md border border-neutral-200 p-3">
+              <div>
+                <label className="block text-xs font-medium text-neutral-700">
+                  ¿Quién paga el flete de la devolución?
+                </label>
+                <div className="mt-1 flex gap-2 text-sm">
+                  {(["shopper", "cliente"] as const).map((opcion) => (
+                    <label
+                      key={opcion}
+                      className={`flex-1 cursor-pointer rounded-md border px-3 py-1.5 text-center capitalize ${
+                        quienPagaFlete === opcion
+                          ? "border-neutral-900 bg-neutral-900 text-white"
+                          : "border-neutral-300 text-neutral-600"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="quienPagaFlete"
+                        value={opcion}
+                        checked={quienPagaFlete === opcion}
+                        onChange={() => setQuienPagaFlete(opcion)}
+                        className="sr-only"
+                      />
+                      {opcion}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700">
+                  Plazo para devolver (días)
+                </label>
+                <input
+                  type="number"
+                  value={plazoDias}
+                  onChange={(e) => setPlazoDias(Number(e.target.value))}
+                  className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={reembolsoParcial}
+                  onChange={(e) => setReembolsoParcial(e.target.checked)}
+                />
+                Aplica reembolso parcial
+              </label>
+
+              {reembolsoParcial && (
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700">
+                    Monto a reembolsar
+                  </label>
+                  <input
+                    type="number"
+                    value={montoReembolso}
+                    onChange={(e) => setMontoReembolso(Number(e.target.value))}
+                    className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm"
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={() =>
+                  solicitarDevolucion(params.id, {
+                    quienPagaFlete,
+                    plazoDias,
+                    reembolsoParcial,
+                    montoReembolso: reembolsoParcial ? montoReembolso : undefined,
+                  })
+                }
+                className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+              >
+                Confirmar solicitud de devolución
+              </button>
+            </div>
           ) : (
             <button
-              onClick={() => solicitarDevolucion(params.id)}
+              onClick={() => setMostrarFormDevolucion(true)}
               className="mt-3 rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-50"
             >
               Iniciar devolución

@@ -11,7 +11,6 @@ export default function RefinamientoPage({ params }: { params: { id: string } })
 
   const looks = looksDe(params.id);
   const favoritos = looks.filter((look) => look.estado === "favorito");
-  const variantes = looks.filter((look) => look.fuente === "ai" && look.estado === "sugerido");
   const chat = state.chatPorProyecto[params.id] ?? [];
 
   return (
@@ -24,7 +23,7 @@ export default function RefinamientoPage({ params }: { params: { id: string } })
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         {favoritos.map((favorito) => {
-          const variante = variantes.find((v) => v.proyecto_id === favorito.proyecto_id);
+          const variante = looks.find((look) => state.variantePadre[look.id] === favorito.id);
           return (
             <div key={favorito.id} className="rounded-lg border border-neutral-200 bg-white p-4">
               <div className="mb-3 flex h-32 items-center justify-center rounded-md bg-neutral-100 text-xs text-neutral-400">

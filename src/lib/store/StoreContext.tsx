@@ -25,19 +25,36 @@ import {
   mockLooks,
   mockProyecto,
 } from "@/lib/mockData";
-import { generarLooksIA, regenerarVariantes } from "@/lib/aiMock";
+import { encontrarReemplazo, generarLooksIA, regenerarVariantes } from "@/lib/aiMock";
 
-const STORAGE_KEY = "personal-shopper-store-v1";
+const STORAGE_KEY = "personal-shopper-store-v2";
+
+export interface DevolucionDetalle {
+  quienPagaFlete: "cliente" | "shopper";
+  plazoDias: number;
+  reembolsoParcial: boolean;
+  montoReembolso?: number;
+}
 
 export interface FeedbackEntrega {
   rating: number;
   comentario: string;
   devolucion_solicitada: boolean;
+  devolucion?: DevolucionDetalle;
 }
 
 export interface ChatMensaje {
   autor: "cliente" | "shopper";
   texto: string;
+}
+
+export interface ReemplazoInfo {
+  producto: string;
+  tienda: string;
+  precio: number;
+  precioOriginal: number;
+  requiereAprobacion: boolean;
+  aprobado: boolean;
 }
 
 interface StoreState {
@@ -46,11 +63,13 @@ interface StoreState {
   proyectos: Record<string, Proyecto>;
   looksPorProyecto: Record<string, Look[]>;
   comentariosPorLook: Record<string, string>;
+  variantePadre: Record<string, string>;
   chatPorProyecto: Record<string, ChatMensaje[]>;
   autorizaciones: Record<string, AutorizacionPago>;
   compras: Record<string, Compra>;
   feedbacks: Record<string, FeedbackEntrega>;
   entregadoPorProyecto: Record<string, boolean>;
+  reemplazos: Record<string, ReemplazoInfo>;
 }
 
 function seedState(): StoreState {
@@ -60,11 +79,13 @@ function seedState(): StoreState {
     proyectos: { [mockProyecto.id]: mockProyecto },
     looksPorProyecto: { [DEMO_PROYECTO_ID]: mockLooks },
     comentariosPorLook: {},
+    variantePadre: {},
     chatPorProyecto: { [DEMO_PROYECTO_ID]: [] },
     autorizaciones: { [DEMO_PROYECTO_ID]: mockAutorizacionPago },
     compras: {},
     feedbacks: {},
     entregadoPorProyecto: {},
+    reemplazos: {},
   };
 }
 
@@ -91,10 +112,13 @@ interface StoreApi {
     itemId: string,
     estado: ItemEstado
   ) => void;
+  buscarReemplazo: (proyectoId: string, itemId: string) => void;
+  aprobarReemplazoCliente: (itemId: string) => void;
+  confirmarReemplazo: (proyectoId: string, itemId: string) => void;
   confirmarCompra: (proyectoId: string) => void;
   marcarEntregado: (proyectoId: string) => void;
   guardarFeedback: (proyectoId: string, rating: number, comentario: string) => void;
-  solicitarDevolucion: (proyectoId: string) => void;
+  solicitarDevolucion: (proyectoId: string, detalle: DevolucionDetalle) => void;
   looksDe: (proyectoId: string) => Look[];
   proyectoDe: (proyectoId: string) => Proyecto | undefined;
 }
@@ -199,6 +223,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           prev.comentariosPorLook
         );
 
+        const nuevaAsociacion: Record<string, string> = {};
+        favoritos.forEach((favorito, i) => {
+          const variante = variantes[i];
+          if (variante && variante.id !== favorito.id) {
+            nuevaAsociacion[variante.id] = favorito.id;
+          }
+        });
+
         return {
           ...prev,
           proyectos: { ...prev.proyectos, [proyectoId]: { ...proyecto, estado: "refinamiento" } },
@@ -206,6 +238,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...prev.looksPorProyecto,
             [proyectoId]: [...looks, ...variantes],
           },
+          variantePadre: { ...prev.variantePadre, ...nuevaAsociacion },
         };
       });
     },
@@ -274,19 +307,95 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const actualizarItemEstado = useCallback<StoreApi["actualizarItemEstado"]>(
     (proyectoId, itemId, estado) => {
-      setState((prev) => ({
+      setState((prev) => {
+        const { [itemId]: _omit, ...reemplazosSinItem } = prev.reemplazos;
+        return {
+          ...prev,
+          reemplazos: estado === "no_disponible" ? prev.reemplazos : reemplazosSinItem,
+          looksPorProyecto: {
+            ...prev.looksPorProyecto,
+            [proyectoId]: (prev.looksPorProyecto[proyectoId] ?? []).map((look) => ({
+              ...look,
+              items: look.items.map((item) => (item.id === itemId ? { ...item, estado } : item)),
+            })),
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const buscarReemplazo = useCallback<StoreApi["buscarReemplazo"]>((proyectoId, itemId) => {
+    setState((prev) => {
+      const looks = prev.looksPorProyecto[proyectoId] ?? [];
+      const todosLosItems = looks.flatMap((look) => look.items);
+      const item = todosLosItems.find((i) => i.id === itemId);
+      if (!item) return prev;
+
+      const usados = todosLosItems.map((i) => i.producto);
+      const candidato = encontrarReemplazo(item, usados);
+      if (!candidato) return prev;
+
+      const delta = (candidato.precio - item.precio) / item.precio;
+      const requiereAprobacion = delta > 0.15;
+
+      return {
         ...prev,
+        reemplazos: {
+          ...prev.reemplazos,
+          [itemId]: {
+            producto: candidato.producto,
+            tienda: candidato.tienda,
+            precio: candidato.precio,
+            precioOriginal: item.precio,
+            requiereAprobacion,
+            aprobado: !requiereAprobacion,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const aprobarReemplazoCliente = useCallback<StoreApi["aprobarReemplazoCliente"]>((itemId) => {
+    setState((prev) => {
+      const actual = prev.reemplazos[itemId];
+      if (!actual) return prev;
+      return {
+        ...prev,
+        reemplazos: { ...prev.reemplazos, [itemId]: { ...actual, aprobado: true } },
+      };
+    });
+  }, []);
+
+  const confirmarReemplazo = useCallback<StoreApi["confirmarReemplazo"]>((proyectoId, itemId) => {
+    setState((prev) => {
+      const reemplazo = prev.reemplazos[itemId];
+      if (!reemplazo || !reemplazo.aprobado) return prev;
+      const { [itemId]: _omit, ...restoReemplazos } = prev.reemplazos;
+
+      return {
+        ...prev,
+        reemplazos: restoReemplazos,
         looksPorProyecto: {
           ...prev.looksPorProyecto,
           [proyectoId]: (prev.looksPorProyecto[proyectoId] ?? []).map((look) => ({
             ...look,
-            items: look.items.map((item) => (item.id === itemId ? { ...item, estado } : item)),
+            items: look.items.map((item) =>
+              item.id === itemId
+                ? {
+                    ...item,
+                    producto: reemplazo.producto,
+                    tienda: reemplazo.tienda,
+                    precio: reemplazo.precio,
+                    estado: "comprado",
+                  }
+                : item
+            ),
           })),
         },
-      }));
-    },
-    []
-  );
+      };
+    });
+  }, []);
 
   const confirmarCompra = useCallback<StoreApi["confirmarCompra"]>((proyectoId) => {
     setState((prev) => {
@@ -349,6 +458,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             rating,
             comentario,
             devolucion_solicitada: prev.feedbacks[proyectoId]?.devolucion_solicitada ?? false,
+            devolucion: prev.feedbacks[proyectoId]?.devolucion,
           },
         },
       }));
@@ -356,19 +466,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const solicitarDevolucion = useCallback<StoreApi["solicitarDevolucion"]>((proyectoId) => {
-    setState((prev) => ({
-      ...prev,
-      feedbacks: {
-        ...prev.feedbacks,
-        [proyectoId]: {
-          rating: prev.feedbacks[proyectoId]?.rating ?? 0,
-          comentario: prev.feedbacks[proyectoId]?.comentario ?? "",
-          devolucion_solicitada: true,
+  const solicitarDevolucion = useCallback<StoreApi["solicitarDevolucion"]>(
+    (proyectoId, detalle) => {
+      setState((prev) => ({
+        ...prev,
+        feedbacks: {
+          ...prev.feedbacks,
+          [proyectoId]: {
+            rating: prev.feedbacks[proyectoId]?.rating ?? 0,
+            comentario: prev.feedbacks[proyectoId]?.comentario ?? "",
+            devolucion_solicitada: true,
+            devolucion: detalle,
+          },
         },
-      },
-    }));
-  }, []);
+      }));
+    },
+    []
+  );
 
   const looksDe = useCallback((proyectoId: string) => state.looksPorProyecto[proyectoId] ?? [], [state]);
   const proyectoDe = useCallback((proyectoId: string) => state.proyectos[proyectoId], [state]);
@@ -387,6 +501,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       aprobarLookComoPropuesta,
       confirmarAutorizacion,
       actualizarItemEstado,
+      buscarReemplazo,
+      aprobarReemplazoCliente,
+      confirmarReemplazo,
       confirmarCompra,
       marcarEntregado,
       guardarFeedback,
@@ -406,6 +523,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       aprobarLookComoPropuesta,
       confirmarAutorizacion,
       actualizarItemEstado,
+      buscarReemplazo,
+      aprobarReemplazoCliente,
+      confirmarReemplazo,
       confirmarCompra,
       marcarEntregado,
       guardarFeedback,

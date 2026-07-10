@@ -114,6 +114,23 @@ export function generarLooksIA(proyecto: Proyecto, cliente: Cliente): Look[] {
   ).filter((look): look is Look => Boolean(look));
 }
 
+export function encontrarReemplazo(item: Item, productosUsados: string[] = []): CatalogItem | undefined {
+  const original = CATALOGO.find((c) => c.producto === item.producto);
+  if (!original) return undefined;
+
+  const candidatos = CATALOGO.filter(
+    (c) =>
+      c.categoria === original.categoria &&
+      c.producto !== item.producto &&
+      !productosUsados.includes(c.producto)
+  );
+  if (candidatos.length === 0) return undefined;
+
+  return [...candidatos].sort(
+    (a, b) => Math.abs(a.precio - item.precio) - Math.abs(b.precio - item.precio)
+  )[0];
+}
+
 export function regenerarVariantes(
   proyecto: Proyecto,
   cliente: Cliente,
