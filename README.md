@@ -16,12 +16,33 @@ borrador) está en [`docs/spec.md`](docs/spec.md).
 
 ## Estado actual
 
-Este scaffold cubre la navegación y el layout de las 9 pantallas del flujo,
-con datos de ejemplo en `src/lib/mockData.ts` para poder recorrerlo sin un
-backend conectado. Todavía no está conectado a un proyecto Supabase real ni
-implementa lógica de negocio (generación AI de looks, preautorización real
-con Mercado Pago, etc.) — cada pantalla señala con comentarios `TODO` dónde
-falta esa integración.
+El flujo completo es funcional de punta a punta usando un estado local en el
+navegador (React Context persistido en `localStorage`, ver
+`src/lib/store/StoreContext.tsx`) en lugar de un backend real:
+
+- Onboarding y "Nuevo proyecto" guardan datos reales y crean el proyecto.
+- El Lookbook genera looks con una heurística local basada en reglas
+  (`src/lib/aiMock.ts` + catálogo en `src/lib/catalog.ts`) — **no** es un
+  modelo de IA real, es un stand-in determinístico que combina prendas de un
+  catálogo fijo según presupuesto/estilo/prioridad.
+- Favoritos, descartes, comentarios, regeneración de variantes, elección de
+  la propuesta final, preautorización, ejecución de compra ítem por ítem,
+  tracking y feedback actualizan ese mismo estado y se reflejan en toda la
+  navegación.
+
+Lo que **no** está integrado porque requiere credenciales/cuentas externas
+que no están disponibles en este entorno:
+
+- Un proyecto Supabase real (el schema SQL y los helpers de cliente están
+  listos en `supabase/` y `src/lib/supabase/`, pero no hay una base de datos
+  provisionada — todo vive en `localStorage` por ahora).
+- Generación de looks con un modelo de IA real (hoy usa la heurística local
+  mencionada arriba).
+- Preautorización de pago real con Mercado Pago (la pantalla de autorización
+  simula el hold localmente, sin tocar una pasarela de pago).
+
+Cada uno de estos puntos está señalado con comentarios en el código donde
+correspondería conectar la integración real.
 
 ## Estructura
 
@@ -30,7 +51,10 @@ docs/spec.md                          Especificación de producto
 supabase/migrations/0001_init.sql     Schema SQL derivado del data model
 src/types/domain.ts                   Tipos TS del data model
 src/lib/supabase/{client,server}.ts   Helpers de cliente Supabase (browser/server)
-src/lib/mockData.ts                   Datos de ejemplo para navegar el flujo
+src/lib/catalog.ts                    Catálogo local de productos (placeholder)
+src/lib/aiMock.ts                     Heurística local que reemplaza a la IA real
+src/lib/store/StoreContext.tsx        Estado de la app (Context + localStorage)
+src/lib/mockData.ts                   Datos semilla del proyecto de ejemplo "demo"
 src/lib/flow.ts                       Metadata de las 9 pantallas (orden, rutas, actor)
 src/components/                       NavBar, indicador de progreso, layout de pantalla
 src/app/                              Rutas de las 9 pantallas (App Router)
@@ -58,12 +82,15 @@ cp .env.example .env.local   # completar con credenciales de un proyecto Supabas
 npm run dev
 ```
 
-Abrí [http://localhost:3000](http://localhost:3000) — el proyecto de ejemplo
-`demo` te deja recorrer el flujo completo con datos mock.
+Abrí [http://localhost:3000](http://localhost:3000) y creá un proyecto desde
+cero, o segui el proyecto de ejemplo "demo" ya seedeado. El estado persiste
+en `localStorage`, así que recargar la página no lo pierde.
 
-## Próximos pasos
+## Próximos pasos (requieren credenciales externas)
 
-- Provisionar un proyecto Supabase real y aplicar `supabase/migrations/0001_init.sql`.
-- Reemplazar `mockData.ts` por lecturas/escrituras reales contra Supabase.
-- Integrar generación de looks por AI en la pantalla de Lookbook.
-- Integrar preautorización de pago (Mercado Pago) en la pantalla de Autorización.
+- Provisionar un proyecto Supabase real, aplicar `supabase/migrations/0001_init.sql`,
+  y reemplazar `StoreContext.tsx` por lecturas/escrituras reales contra esa base.
+- Integrar generación de looks con un modelo de IA real en lugar de la
+  heurística de `aiMock.ts`.
+- Integrar preautorización de pago real (Mercado Pago) en la pantalla de
+  Autorización, en lugar del mock local.

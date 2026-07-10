@@ -1,27 +1,73 @@
+"use client";
+
 import Link from "next/link";
 import { ScreenShell } from "@/components/ScreenShell";
-import { mockLooks } from "@/lib/mockData";
+import { useStore } from "@/lib/store/StoreContext";
 
 export default function PropuestaPage({ params }: { params: { id: string } }) {
-  const propuesta = mockLooks.find((look) => look.estado === "favorito")!;
-  const precioMercado = propuesta.precio_total * 1.15;
-  const comision = propuesta.precio_total * 0.1;
+  const { looksDe, aprobarLookComoPropuesta } = useStore();
+  const looks = looksDe(params.id);
+
+  const aprobado = looks.find((look) => look.estado === "aprobado");
+  const candidatos = looks.filter(
+    (look) => look.estado === "favorito" || (look.fuente === "ai" && look.estado === "sugerido")
+  );
+
+  if (!aprobado) {
+    return (
+      <ScreenShell proyectoId={params.id} activeSlug="propuesta" titulo="Propuesta Final — Curada por el shopper" actor="cliente">
+        <p className="max-w-2xl text-sm text-neutral-600">
+          El shopper elige, entre tus favoritos y las variantes regeneradas,
+          la propuesta definitiva a presentarte.
+        </p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {candidatos.map((look) => (
+            <div key={look.id} className="rounded-lg border border-neutral-200 bg-white p-4">
+              <ul className="space-y-1 text-xs text-neutral-600">
+                {look.items.map((item) => (
+                  <li key={item.id} className="flex justify-between">
+                    <span>
+                      {item.producto} · {item.tienda}
+                    </span>
+                    <span>${item.precio.toLocaleString("es-AR")}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-sm font-semibold text-neutral-900">
+                Total: ${look.precio_total.toLocaleString("es-AR")}
+              </p>
+              <button
+                onClick={() => aprobarLookComoPropuesta(params.id, look.id)}
+                className="mt-3 w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+              >
+                Usar como propuesta final
+              </button>
+            </div>
+          ))}
+          {candidatos.length === 0 && (
+            <p className="text-sm text-neutral-500">
+              No hay looks favoritos ni variantes todavía — volvé al lookbook.
+            </p>
+          )}
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  const precioMercado = aprobado.precio_total * 1.15;
+  const comision = aprobado.precio_total * 0.1;
   const abonoPagado = 15000;
+  const totalAutorizar = aprobado.precio_total + comision - abonoPagado;
 
   return (
-    <ScreenShell
-      proyectoId={params.id}
-      activeSlug="propuesta"
-      titulo="Propuesta Final — Curada por el shopper"
-      actor="cliente"
-    >
+    <ScreenShell proyectoId={params.id} activeSlug="propuesta" titulo="Propuesta Final — Curada por el shopper" actor="cliente">
       <div className="max-w-2xl rounded-lg border border-neutral-200 bg-white p-6">
         <div className="mb-4 flex h-48 items-center justify-center rounded-md bg-neutral-100 text-xs text-neutral-400">
           fotos reales de los productos en tienda
         </div>
 
         <ul className="space-y-2 text-sm">
-          {propuesta.items.map((item) => (
+          {aprobado.items.map((item) => (
             <li key={item.id} className="flex justify-between">
               <span>
                 {item.producto} · {item.tienda}
@@ -40,7 +86,7 @@ export default function PropuestaPage({ params }: { params: { id: string } }) {
           </div>
           <div className="flex justify-between font-medium text-emerald-700">
             <span>Precio conseguido (superador)</span>
-            <span>${propuesta.precio_total.toLocaleString("es-AR")}</span>
+            <span>${aprobado.precio_total.toLocaleString("es-AR")}</span>
           </div>
           <div className="flex justify-between text-neutral-600">
             <span>Comisión del shopper (transparente)</span>
@@ -52,13 +98,7 @@ export default function PropuestaPage({ params }: { params: { id: string } }) {
           </div>
           <div className="flex justify-between border-t border-neutral-200 pt-2 text-base font-semibold text-neutral-900">
             <span>Total a autorizar</span>
-            <span>
-              $
-              {(propuesta.precio_total + comision - abonoPagado).toLocaleString(
-                "es-AR",
-                { maximumFractionDigits: 0 }
-              )}
-            </span>
+            <span>${totalAutorizar.toLocaleString("es-AR", { maximumFractionDigits: 0 })}</span>
           </div>
         </div>
 
